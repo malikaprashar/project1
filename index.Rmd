@@ -19,15 +19,24 @@ tidy=TRUE, tidy.opts=list(width.cutoff=60), R.options=list(max.print=100))
 
 ## Data Wrangling, Exploration, Visualization
 
-### Name and EID here
+### Malika Prashar mp44776
 
 #### Introduction 
 
-Paragraph or two introducing your datasets and variables, why they are interesting to you, etc.
+
+The two datasets I used for my project are the State by State SAT (dat1) and State Teen Pregnancy Rates (dat2). Dat1 gives us expenditure per pupil, average pupil to teacher ratio, estimated annual teacher salary, and average SAT scores along with averages in each section of the SATs. Dat2 gives us the number of pregnancies per 1000 teenage girls in each state, the role of each state in the civil war, and church attendance in the past week. I wanted to see whether there was any relationship between SAT scores and teen pregnancy rates in each state. I would imagine that states with higher higher average SAT scores would have lower teen pregnancy rates because education can lead to making "better" life choices. 
+
+I was interested in this topic because I volunteered in a community in South America where teen pregnancy rates were incredibly high and lower literacy rates. The organization helped by educating young mothers who could later find jobs to support their families. I was curious to see whether there were similarities in the US regarding teen pregnancies and education. 
 
 ```{R}
-# read your datasets in here, e.g., with read_csv()
 
+library(tidyverse)
+library(Stat2Data)
+library(mosaicData)
+
+dat1 <- mosaicData::SAT
+
+dat2 <- read_csv("TeenPregnancy.csv")
 ```
 
 #### Tidying: Reshaping
@@ -35,52 +44,112 @@ Paragraph or two introducing your datasets and variables, why they are interesti
 If your datasets are tidy already, demonstrate that you can reshape data with pivot wider/longer here (e.g., untidy and then retidy). Alternatively, it may be easier to wait until the wrangling section so you can reshape your summary statistics. Note here if you are going to do this.
 
 ```{R}
-# your tidying code (if applicable; can also wait until wrangling section)
 ```
-
+I am going to do this in the wrangling section. 
     
 #### Joining/Merging
 
 ```{R}
-# your joining code
+#change all state names to abbreviations and all column headers to lowercase
+dat1$state <- state.abb[match(dat1$state, state.name)]
+dat2<-rename_with(dat2, tolower)
 
-# your joining code
+#joined the two datasets
+dat_join <- inner_join(dat1, dat2, by="state") 
+
+#observations and variables in each dataset 
+dim(dat1)
+dim(dat2)
+dim(dat_join)
+
+#unique IDs in datasets
+colnames(dat1)
+
+colnames(dat2)
+
+colnames(dat_join)
+
+
 ```
 
-Discussions of joining here. Feel encouraged to break up into more than once code chunk and discuss each in turn.
+
+
+I decided to use an inner join to join my two datasets because I wanted to retain everything in my two datasets. First, I had to convert the state names in dat1 to their abbreviations since that's how they were arranged in dat2. Then I had to rename all my columns in dat2 to lowercase so that the ID variables would match and be able to perform a join. Dat1 originally had 50 observations of 8 variables and dat2 had 50 observations with 5 variables. My joined dataset contains 50 observations of 12 variables. They only overlapping IDs between both the datsets were the 50 US states. The join didn't drop any observations. Dat 2 had ID variables: Civil War, Church, Teen, and a random x1 column, which dat1 did not contain. Similarly, dat1 had ID variables: expend, ratio, salary, frac, verbal, math, and sat all which dat2 didn't contain. 
 
 ####  Wrangling
 
 ```{R}
-# your wrangling code
+#remove random column using select
+dat_join<-select(dat_join, -x1)
 
-# your wrangling code
+#find state with highest and lowest SAT score
+dat_join %>% slice_max(sat)
+dat_join %>% slice_min(sat)
 
-# your wrangling code
+#use mutate to create new variable "Aggregate SAT Score" labeled as "agg_satscore" and make new variable called rank 
+aggregate_sat<-dat_join %>% mutate(agg_satscore = frac*sat)  %>% select(state, expend, ratio, salary, frac, verbal, math, sat, agg_satscore, civilwar, church, teen) %>% arrange(agg_satscore) %>% mutate(rank = dense_rank(agg_satscore))
+aggregate_sat
+
+#use mutate to create another new variable called "Percentile" and used arrange to sort percentile column in descending order 
+percentile_sat <-aggregate_sat %>% mutate(percentile= (rank-1)/50*100) %>% arrange(desc(percentile))
+percentile_sat
+
+#using str_to_lower to change all state abbreviations to lowercase
+dat_join %>% mutate(lowercase_state= str_to_lower(state)) %>% select(lowercase_state, everything())
 ```
 
-Your discussion of wrangling section here. Feel encouraged to break up into more than once code chunk and discuss each in turn.
+First, I decided to create a new variable called Aggregated SAT Scores because I realized that the average of the sat scores were not weighted. This meant that in some states the SAT scores appeared to be higher because only a few people had taken the SAT that were eligible. For example, we can see that North Dakota appears to have the highest average SAT score but only 5% of the eligible population contributed to that average. To conduct accurate summary statistic reports, I created this new variable by multiplying the frac column per state (number of eligible people who took the exam out of a 100 people) by the average SAT score of the state. This gave me a number that more accurately represented the SAT scores per state taking into account how many students contributed to the average SAT score. Then I made another variable called rank that ranked each state's aggregate SAT score in comparison to all the other states. This allowed me to measure each state's percentile in comparison to all other states. I found that Connecticut's SAT scores were in the 98th percentile and ranked the highest in terms of aggregate SAT score. This was because 81% of Connecticut's eligible population took the SAT compared to only 4% of Mississippi's eligible population taking the SAT.  
+
+```{R}
+library(gt)
+library(knitr)
+
+#summary statistic for numeric variable 
+
+dat_join %>% select(expend, ratio, salary, frac, verbal, math, sat, church, teen) %>% summarise_each(funs(mean=mean, sd=sd, min=min, max=max, median=median)) %>% gather(stat, val) %>% separate(stat, into = c("variable", "stat"), sep= "_") %>% spread(stat, val) %>% select(variable, mean, sd, min, max, median) %>% gt %>% tab_header(title = md("**Summary Statistics of Numeric Variables**")) %>% tab_spanner(label = "Variables and Summary Statistics", columns = c("variable", "mean", "sd", "min", "max", "median"))
+
+#count for categorical variable
+dat_join %>% group_by(civilwar) %>% summarise(n()) %>% kable()
+
+#number of NAs for each variable
+dat_join %>% summarise_all(funs(sum(is.na(.)))) %>% kable()
+
+#own function 
+avgsatscore <- function(x,y) {(x+y)}
+dat_join %>% group_by(state) %>% summarize(avgsat=avgsatscore(math, verbal)) %>% kable()
+```
+
+```{R}
+# summary statistics using group by 
+
+civil<- percentile_sat %>% group_by(civilwar) %>% summarise(distinct_states=n_distinct(state), average_percentile= mean(percentile), average_teen= mean(teen)) %>% arrange(desc(average_percentile)) %>% gt %>% tab_header("Average SAT percentiles and Teen pregnancy rates grouped by role of states in the Civil War")
+
+```
+
+After, I did all the summary statistics for my numeric variables by selecting the variables and using summarize each to calculate the mean, standard deviation, min, max, and median. I used gather to tidy my summary statistics into columns that made more sense. I then used gt to make a nicer looking table. After this, I used summarize(n)) to count categorical variable. I found that 3 states in the dataset where border states, 11 were in the confederacy, 15 were other, and 21 were in the union during the civil war. Then I counted the number of NAs in my variables using summarize_all and came up with no NAs for any variable. Finally, I made my own function to calculate the average SAT score for each state by adding their math and verbal scores. 
 
 
 #### Visualizing
 
 ```{R}
-# your plot 1
+ggplot(data = percentile_sat, aes(x= percentile, y= teen)) + geom_point(aes(color=civilwar)) +geom_smooth(method = "lm") + ggtitle("Percentile vs Teen Pregnancy Rates")+ xlab("Percentile") + ylab("Number of pregnancies per 1000")
 ```
 
-Your discussion of plot 1
+In this plot, I wanted to see whether there was a relationship between a states' score percentile when compared to the number of teen pregnancies. From the graph we can see that there is a slight negative correlation between the two variables. A state with a higher percentile ranking of SAT scores, there was a lower number of teen pregnancies per 1000 girls. We can assume that this would make sense since a state with higher on average SAT scores would be better educated and make better decisions regarding teen pregnancies. 
 
 ```{R}
-# your plot 2
+ggplot(data = aggregate_sat, aes(x = reorder(state, -agg_satscore), y = agg_satscore, fill = state)) + 
+   geom_bar(aes(y= agg_satscore, fill=state), stat = "summary", fun= mean, width=0.9) + scale_y_continuous(breaks = seq(0, 80000, 10000))+theme(axis.text.x = element_text(angle = 90, vjust = .5, hjust=.5),legend.position = "none")+ xlab("State")+ ggtitle("Aggregate SAT Score per State")
 ```
 
-Your discussion of plot 2
+Plot 2 is a barplot that shows each state's aggregated SAT score, meaning taking into account how many people actually took the test vs how many were eligible. This gave a more accurate representation because it puts more weight on state's scores if they had a higher number of people take the SATs. From this plot we can easily see that the top 3 states with the highest Aggregated SAT score are Connecticut, Massachusetts, and New York. 
 
 ```{R}
-# your plot 3
+ggplot(data = aggregate_sat, aes(x = expend, y = agg_satscore, color=civilwar)) + geom_point() + ggtitle("State Average Expenditure per student vs Aggregate SAT Score") + labs(y="Aggregate SAT Score", x ="Expenditure in thousands of dollars") + geom_smooth(method = "lm") +facet_wrap(~civilwar)
 ```
 
-Your discussion of plot 3
+Plot 3 shows the relationship between a state's expenditure per student and the state's average SAT score. Furthermore, I have faceted by each state's position in the civil war with B= border state, C= confederate, O=other, and U=union. There appears to be a strong positive correlation between these two variables. I had predicted that the more a state spends on its students, the higher their SAT scores would be and this plot suggest this claim across states in the Confederate, Union, and Other regions. 
+
 
 #### Concluding Remarks
 
